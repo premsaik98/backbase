@@ -9,12 +9,17 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
+import os
+import environ
 
-from pathlib import Path
+from collections import OrderedDict
+from dotenv import load_dotenv
+
+
+env = environ.Env()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -27,7 +32,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-
+CORS_ORIGIN_ALLOW_ALL = True
 # Application definition
 
 INSTALLED_APPS = [
@@ -37,6 +42,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_extensions',
+    'main.apps.MainConfig',
+    'constance',
+    'constance.backends.database',
+    'rest_framework',
+    'django_celery_beat',
 ]
 
 MIDDLEWARE = [
@@ -54,7 +65,7 @@ ROOT_URLCONF = 'backbase.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -67,6 +78,21 @@ TEMPLATES = [
     },
 ]
 
+# Celery settings
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+
+
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+STATIC_URL = '/static/'
+
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = '/media/'
+
+STATICFILES_LOCATION = 'static'
+MEDIA_FILES_LOCATION = 'media'
+
 WSGI_APPLICATION = 'backbase.wsgi.application'
 
 
@@ -76,7 +102,7 @@ WSGI_APPLICATION = 'backbase.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
     }
 }
 
@@ -98,6 +124,49 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+
+
+CONSTANCE_BACKEND = 'constance.backends.database.DatabaseBackend'
+
+CONSTANCE_DATABASE_CACHE_BACKEND = 'default'
+
+CONSTANCE_CONFIG = OrderedDict(
+    [
+        ("BEACON_BASE_URL", ("https://api.currencybeacon.com/v1", 'Base URL for Currency Beacon')),
+        ("CURRENCY_BEACON_API_KEY", ("5tS3PDhEDY7gYxaxacaZ5kNsDp05YJfKKy", 'API key for Currency Beacon')),
+        ("CACHE_TIMEOUT", (86400, "Cache timeout in seconds (1 day)")),
+        ("API_REQUEST_TIMEOUT", (10, "API request timeout in second")),
+        ('MAX_RETRIES', (3, 'Maximum number of retries for API requests')),
+    ]
+)
+
+CONSTANCE_CONFIG_FIELDSETS = OrderedDict(
+    [
+        (
+            "Currency Beacon API",
+            (
+                'BEACON_BASE_URL',
+                'CURRENCY_BEACON_API_KEY',
+                'CACHE_TIMEOUT',
+                'API_REQUEST_TIMEOUT',
+                'MAX_RETRIES'
+            )
+        )
+    ]
+)
+
+SHELL_PLUS = "ipython"
 
 
 # Internationalization
