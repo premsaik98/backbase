@@ -1,0 +1,8 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+    <li>
+        <a href="{% url 'currency_converter' %}">Currency Converter</a>
+    </li>
+    {{ block.super }}
+{% endblock %}

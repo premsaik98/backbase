@@ -1,0 +1,80 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Currency Converter</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+
+    <div class="converter-container">
+        <h1>Currency Converter</h1>
+
+        <form method="POST">
+            {% csrf_token %}
+            <div class="form-group">
+                {{ form.source_currency.label_tag }}
+                {{ form.source_currency }}
+            </div>
+
+            <div class="form-group">
+                {{ form.target_currencies.label_tag }}
+                <select name="target_currencies" id="id_target_currencies" multiple>
+                    {% for currency in form.target_currencies.field.queryset %}
+                        <option value="{{ currency.id }}">{{ currency.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                {{ form.amount.label_tag }}
+                {{ form.amount }}
+            </div>
+
+            <button type="submit" class="convert-button">Convert</button>
+        </form>
+
+        {% if conversion_results %}
+            <h2>Conversion Results</h2>
+            <ul class="conversion-results">
+                {% for result in conversion_results %}
+                    <li class="conversion-item">
+                    <strong>{{ result.target_currency.name }}:</strong> 
+                    <span class="conversion-amount">{{ result.symbol }}{{ result.converted_amount }}</span> 
+                    <span class="conversion-rate">(Rate: {{ result.rate_value }})</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const sourceCurrencySelect = document.getElementById('id_source_currency');
+            const targetCurrencySelect = document.getElementById('id_target_currencies');
+
+            sourceCurrencySelect.addEventListener('change', function () {
+                const selectedSourceCurrency = sourceCurrencySelect.value;
+                const targetCurrenciesUrl = "{% url 'get_target_currencies' %}";
+
+                fetch(`${targetCurrenciesUrl}?source_currency=${selectedSourceCurrency}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        targetCurrencySelect.innerHTML = '';
+
+                        data.target_currencies.forEach(currency => {
+                            const option = document.createElement('option');
+                            option.value = currency.id;
+                            option.textContent = currency.name;
+                            targetCurrencySelect.appendChild(option);
+                        });
+                    })
+                    .catch(error => console.error('Error fetching target currencies:', error));
+            });
+        });
+    </script>
+
+</body>
+</html>
