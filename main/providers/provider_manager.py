@@ -31,7 +31,7 @@ class ProviderManager:
     def get_exchange_rate_data(self, source_currency, exchanged_currency, valuation_date=None):
         for provider_entry in self.providers:
             try:
-                rate = provider_entry["provider"].get_exchange_rate_data(source_currency, exchanged_currency, valuation_date)
+                rate = provider_entry["provider"].get_exchange_rate_data(source_currency, exchanged_currency)
                 if rate is not None:
                     return rate
             except Exception as e:
