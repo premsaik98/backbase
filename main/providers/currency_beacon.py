@@ -32,7 +32,6 @@ class CurrencyBeaconProvider:
             'symbols': exchanged_currency,
         }
 
-
         try:
             uri = self.base_url + "/latest"
             response = self.session.get(uri, params=params, timeout=config.API_REQUEST_TIMEOUT )

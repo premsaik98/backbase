@@ -3,11 +3,11 @@ from django.db import DatabaseError
 import requests
 from decimal import Decimal, ROUND_DOWN
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.shortcuts import get_object_or_404, redirect
-from django.shortcuts import render
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -25,7 +25,7 @@ class CurrencyAPIView(APIView):
     """
     Handle all CRUD operations for Currency using APIView.
     """
-    
+
     def get(self, request, code=None):
         try:
             if code:
@@ -57,15 +57,17 @@ class CurrencyAPIView(APIView):
             return Response({"status":"failed", "error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-    def put(self, request, pk):
+    def patch(self, request, code):
         try:
-            currency = get_object_or_404(Currency, pk=pk)
-            serializer = CurrencySerializer(currency, data=request.data)
+            currency = get_object_or_404(Currency, code=code.upper())
+            serializer = CurrencySerializer(currency, data=request.data, partial=True)
+
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data, status=status.HTTP_200_OK)
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
         except Currency.DoesNotExist:
             return Response({"status":"failed", "error": "Currency not found"}, status=status.HTTP_404_NOT_FOUND)
         except DatabaseError as db_err:
@@ -73,9 +75,9 @@ class CurrencyAPIView(APIView):
         except Exception as e:
             return Response({"status":"failed", "error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def delete(self, request, pk):
+    def delete(self, request, code):
         try:
-            currency = get_object_or_404(Currency, pk=pk)
+            currency = get_object_or_404(Currency, code=code)
             currency.delete()
             return Response({"message": "Currency deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
         except Currency.DoesNotExist:
@@ -154,53 +156,115 @@ def fetch_exchange_rate_from_api(request, source_currency_code, target_currency_
         return None
 
 
-def currency_converter(request):
-    form = CurrencyConverterForm(request.POST or None)
-    conversion_results = []
 
-    if request.method == 'POST' and form.is_valid():
+class CurrencyConverterAPIView(APIView):
+    def get(self, request):
+        form = CurrencyConverterForm()
+        return render(request, 'admin/converter.html', {'form': form})
+
+    def post(self, request):
+        if request.content_type == 'application/json':
+            source_currency_code = request.data.get('source_currency', "").upper()
+            target_currency_codes = request.data.get('target_currencies', [])
+
+            try:
+                source_currency = Currency.objects.get(code=source_currency_code)
+            except Currency.DoesNotExist:
+                return Response(
+                    {"source_currency": [f"Currency with code '{source_currency_code}' does not exist."]}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            target_currencies = []
+            for code in target_currency_codes:
+                code_upper = code.strip().upper()
+                try:
+                    target_currency = Currency.objects.get(code=code_upper)
+                    target_currencies.append(target_currency.pk)
+                except Currency.DoesNotExist:
+                    return Response(
+                        {"target_currencies": [f"Currency with code '{code_upper}' does not exist."]}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            form_data = {
+                'source_currency': source_currency.pk,
+                'target_currencies': target_currencies,
+                'amount': request.data.get('amount')
+            }
+            
+            form = CurrencyConverterForm(data=form_data)
+
+            if form.is_valid():
+                conversion_results = self.process_conversion(form)
+                return Response({'conversion_results': conversion_results}, status=status.HTTP_200_OK)
+            else:
+                return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        else:
+            form = CurrencyConverterForm(request.POST)
+            if form.is_valid():
+                conversion_results = self.process_conversion(form)
+                return render(request, 'admin/converter.html', {'form': form, 'conversion_results': conversion_results})
+            
+            return render(request, 'admin/converter.html', {'form': form})
+
+
+    def process_conversion(self, form):
         source_currency = form.cleaned_data['source_currency']
         target_currencies = form.cleaned_data['target_currencies']
         amount = form.cleaned_data['amount']
 
+        conversion_results = []
+
+        def get_exchange_rate_and_convert(target_currency, rate):
+            converted_amount = round(Decimal(str(amount)) * rate, 2)
+            conversion_results.append({
+                'target_currency': target_currency.name,
+                'converted_amount': str(converted_amount),
+                'rate_value': str(round(rate, 6)),
+                'symbol': target_currency.symbol
+            })
+
+        def fetch_exchange_rate_from_provider(target_currency):
+            provider_manager = ProviderManager()
+            rate = provider_manager.get_exchange_rate_data(source_currency.code, target_currency.code)
+
+            if rate:
+                rounded_rate = Decimal(rate).quantize(Decimal('1.000000'), rounding=ROUND_DOWN)
+
+                create_data = {
+                    'source_currency': source_currency.code,
+                    'exchanged_currency': target_currency.code,
+                    'rate_value': rounded_rate,
+                    'valuation_date': timezone.now().date()
+                }
+
+                create_serializer = CurrencyExchangeRateCreateSerializer(data=create_data)
+                if create_serializer.is_valid():
+                    create_serializer.save()
+
+                get_exchange_rate_and_convert(target_currency, rate)
+            else:
+                conversion_results.append({
+                    'target_currency': target_currency.name,
+                    'converted_amount': "N/A",
+                    'rate_value': "N/A",
+                    'symbol': target_currency.symbol
+                })
+
         for target_currency in target_currencies:
             exchange_rate = CurrencyExchangeRate.objects.filter(
-                source_currency=source_currency, 
+                source_currency=source_currency,
                 exchanged_currency=target_currency
             ).order_by('-valuation_date').first()
 
-
-            if not exchange_rate:
-                res = fetch_exchange_rate_from_api(request, source_currency.code, target_currency.code)
-                if res:
-                    exchange_rate = CurrencyExchangeRate.objects.filter(
-                        source_currency=source_currency, 
-                        exchanged_currency=target_currency
-                    ).order_by('-valuation_date').first()
-
-
             if exchange_rate:
-                converted_amount = round(amount * exchange_rate.rate_value, 2)
-                conversion_results.append({
-                    'target_currency': target_currency,
-                    'converted_amount': converted_amount,
-                    'rate_value': round(exchange_rate.rate_value, 6),
-                    'symbol': target_currency.symbol
-                })
+                get_exchange_rate_and_convert(target_currency, exchange_rate.rate_value)
             else:
-                conversion_results.append({
-                    'target_currency': target_currency,
-                    'converted_amount': 'N/A',
-                    'rate_value': 'N/A',
-                    'symbol': target_currency.symbol
-                })
+                fetch_exchange_rate_from_provider(target_currency)
 
-    context = {
-        'form': form,
-        'conversion_results': conversion_results,
-    }
-    
-    return render(request, 'admin/converter.html', context)
+        return conversion_results
 
 
 

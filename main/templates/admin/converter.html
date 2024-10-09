@@ -41,7 +41,7 @@
             <ul class="conversion-results">
                 {% for result in conversion_results %}
                     <li class="conversion-item">
-                    <strong>{{ result.target_currency.name }}:</strong> 
+                    <strong>{{ result.target_currency }}:</strong> 
                     <span class="conversion-amount">{{ result.symbol }}{{ result.converted_amount }}</span> 
                     <span class="conversion-rate">(Rate: {{ result.rate_value }})</span>
                     </li>
